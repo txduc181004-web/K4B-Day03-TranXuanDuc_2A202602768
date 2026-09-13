@@ -64,7 +64,30 @@ class GeminiProvider(BaseLLMProvider):
     """Google Gemini Provider (Native Tool Calling với Google GenAI SDK)"""
     def __init__(self, api_key: str = None, model: str = None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model_name = model or os.getenv("LLM_MODEL") or "gemini-2.5-flash"
+        self.model_name = model or os.getenv("LLM_MODEL") or "gemini-flash-latest"
+        self.fallback_model_names = [
+            "gemini-flash-latest",
+            "gemini-flash-lite-latest",
+            "gemini-3.6-flash"
+        ]
+
+    def _try_fallback_models(self, prompt: str, system_prompt: str = "", tools_schema: List[Dict[str, Any]] = None, config=None):
+        """Thử chạy qua danh sách model dự phòng khi model đang chọn trả về 404 cho API key mới."""
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=self.api_key)
+
+        for model in self.fallback_model_names:
+            if model == self.model_name:
+                continue
+            try:
+                if config is None:
+                    config = types.GenerateContentConfig(temperature=0.2)
+                response = client.models.generate_content(model=model, contents=prompt, config=config)
+                return response
+            except Exception:
+                continue
+        return None
 
     def generate(self, prompt: str, system_prompt: str = "") -> str:
         if not self.api_key or self.api_key == "your_gemini_api_key_here":
@@ -76,7 +99,19 @@ class GeminiProvider(BaseLLMProvider):
             response = client.models.generate_content(model=self.model_name, contents=contents)
             return response.text
         except Exception as e:
-            return f"[Gemini Exception]: {str(e)}"
+            err = str(e)
+            if "404 NOT_FOUND" in err or "NOT_FOUND" in err or "not available" in err.lower():
+                for candidate in self.fallback_model_names:
+                    if candidate == self.model_name:
+                        continue
+                    try:
+                        from google import genai
+                        client = genai.Client(api_key=self.api_key)
+                        resp = client.models.generate_content(model=candidate, contents=contents)
+                        return resp.text
+                    except Exception:
+                        continue
+            return f"[Gemini Exception]: {err}"
 
     def generate_with_tools(self, prompt: str, tools_schema: List[Dict[str, Any]], system_prompt: str = "") -> Dict[str, Any]:
         if not self.api_key or self.api_key == "your_gemini_api_key_here":
@@ -131,7 +166,39 @@ class GeminiProvider(BaseLLMProvider):
                 }
 
         except Exception as e:
-            print(f"⚠️ [Gemini API Warning]: Không thể kết nối live API ({str(e)}). Tự động fallback về Mock.")
+            err = str(e)
+            if "404 NOT_FOUND" in err or "NOT_FOUND" in err or "not available" in err.lower():
+                for candidate in self.fallback_model_names:
+                    if candidate == self.model_name:
+                        continue
+                    try:
+                        from google import genai
+                        from google.genai import types
+                        client = genai.Client(api_key=self.api_key)
+                        config = types.GenerateContentConfig(
+                            system_instruction=system_prompt if system_prompt else None,
+                            tools=[{"function_declarations": function_declarations}] if function_declarations else None,
+                            temperature=0.2
+                        )
+                        response = client.models.generate_content(model=candidate, contents=prompt, config=config)
+                        if response.function_calls:
+                            call = response.function_calls[0]
+                            args = dict(call.args) if hasattr(call, 'args') and call.args else {}
+                            return {
+                                "type": "tool_call",
+                                "tool_name": call.name,
+                                "arguments": args,
+                                "thought": f"Gemini quyết định gọi công cụ '{call.name}' với tham số: {json.dumps(args, ensure_ascii=False)}"
+                            }
+                        else:
+                            return {
+                                "type": "text",
+                                "content": response.text or "",
+                                "thought": "Gemini phản hồi trực tiếp bằng văn bản (không cần gọi công cụ)."
+                            }
+                    except Exception:
+                        continue
+            print(f"⚠️ [Gemini API Warning]: Không thể kết nối live API ({err}). Tự động fallback về Mock.")
             return MockOfflineProvider().generate_with_tools(prompt, tools_schema, system_prompt)
 
 

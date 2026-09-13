@@ -18,14 +18,21 @@
 
 ---
 
-## 2. TRÍCH XUẤT KẾT QUẢ WATERFALL TRACE LOG (KẾT QUẢ THỰC TẾ TỪ SUITE ĐANG CHẠY)
+## 2. TRÍCH XUẤT KẾT QUẢ WATERFALL TRACE LOG (TRACE THỰC TẾ ĐÃ LƯU)
 
-> ⚠️ **LƯU Ý KIỂM THỬ THỰC TẾ:** File `.env` hiện đang chứa `GEMINI_API_KEY` nhưng bản ghi log thực tế cho thấy Google live API không ổn định vì `503 UNAVAILABLE` / `429 RESOURCE_EXHAUSTED` và hệ thống đã tự động chuyển sang `MockOfflineProvider`. Từ đó, phần trace log cuối cùng trong repo được sinh từ trạng thái fallback mock, không phải từ một lời đáp lời live hoàn toàn chính xác.
+> ⚠️ **LƯU Ý KIỂM THỬ THỰC TẾ:** File `.env` đang chứa `GEMINI_API_KEY`, nhưng trong lần chạy suite thực tế gần nhất, Google peer trả về lỗi `503 UNAVAILABLE` / `429 RESOURCE_EXHAUSTED`, nên hệ thống rơi vào `MockOfflineProvider` để fallback. Vì vậy file `trace_waterfall.json` trong repo đang phản ánh flow trace tối thiểu và mock fallback, không phải lời đáp live hoàn toàn từ Gemini.
 
-Dán 1 đoạn trích xuất log tiêu biểu từ file `docs/trace_waterfall.json` mà suite đã ghi thực tế:
+Đoạn trích xuất log tiêu biểu từ file `docs/trace_waterfall.json` hiện thực tế:
 
 ```json
 [
+  {
+    "step": 1,
+    "query": "quy chế đặt lịch",
+    "action_type": "THOUGHT",
+    "thought": "Câu hỏi chung về quy chế học vụ, trả lời trực tiếp không cần gọi Tool.",
+    "latency_ms": 5294.96
+  },
   {
     "step": 1,
     "query": "quy chế đặt lịch",
@@ -37,7 +44,7 @@ Dán 1 đoạn trích xuất log tiêu biểu từ file `docs/trace_waterfall.js
 ]
 ```
 
-> Lưu ý rõ ràng: đây là trace log của sự kiện test suite đã chạy trong trạng thái fallback mock. Nếu key Google có quota/billing hợp lệ và model được chọn đúng, hệ thống sẽ trả về `tool_call`/`text` sinh live theo định dạng Gemini/GenAI.
+> Lưu ý rõ ràng: đây là trace log của sự kiện test suite đã chạy trong trạng thái fallback mock. Nếu key Google có quota/billing hợp lệ và model được chọn đúng, hệ thống sẽ có thể sinh được các record `ACTION_PROPOSED`, `TOOL_EXECUTION`, `FINAL_ANSWER` theo đúng định dạng ReAct Agent bằng live GenAI.
 
 ---
 
@@ -46,8 +53,8 @@ Dán 1 đoạn trích xuất log tiêu biểu từ file `docs/trace_waterfall.js
 - [x] Đã cấu hình `GEMINI_API_KEY` trong `.env` và dùng đúng interpreter `.venv` để thực thi.
 - [x] Đã đồng bộ `LLM_MODEL` sang `gemini-flash-latest` và giữ list fallback `gemini-flash-lite-latest`, `gemini-3.6-flash` trong mã nguồn [src/providers.py](src/providers.py).
 - **Tổng số Test Cases đã chạy thành công:** 5 / 5 test cases.
-- **Số lượt gọi Tool qua MCP Server chính xác:** 5 lượt (theo chuỗi test suite mô phỏng `academic_query` và `schedule_appointment`).
-- **Kết quả trace log:** `docs/trace_waterfall.json` đã được lưu với số lượng sự kiện thực tế hiện có; file đang phản ánh trạng thái fallback mock khi Google API trả `503`/`429`.
+- **Số lượt gọi Tool qua MCP Server chính xác:** 5 lượt (mô phỏng `academic_query` và `schedule_appointment` qua chuỗi test case).
+- **Kết quả trace log:** `docs/trace_waterfall.json` đã được lưu và hiện đang ở trạng thái fallback mock, phản ánh `503/429` từ Google API thay vì live answer hoàn toàn.
 - **Kết quả đẩy Repo nộp bài:** [x] Đã Commit và Push mã nguồn thành công lên GitHub cá nhân.
 
 ---
